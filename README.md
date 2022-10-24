@@ -1,4 +1,4 @@
-# Package-Application
+# Publish-Application
 
 Install wrapper generator for MCM applications, from PSADT templates.
 
@@ -18,10 +18,10 @@ Install wrapper generator for MCM applications, from PSADT templates.
 
 ```powershell
 USAGE:
-    > Package-Application [-InstallRename] [-DownloadURL] [-ClientName] [-ConfMgrName] [-RuntimeEstimate] [-Owner] [-InstallPath] [-ExeName] [-ManualVersion] [-DeployCollection] [-SiteCode] [-AppRepo] [-DistribGroup] [-McmRoot]
+    > Publish-Application [-InstallRename] [-DownloadURL] [-ClientName] [-ConfMgrName] [-RuntimeEstimate] [-Owner] [-InstallPath] [-ExeName] [-ManualVersion] [-DeployCollection] [-SiteCode] [-AppRepo] [-DistribGroup] [-McmRoot]
 
   EXAMPLE:
-    > Package-Application `
+    > Publish-Application `
         -InstallRename "install.msi" `
         -DownloadURL "https://download.mozilla.org/?product=firefox-msi-latest-ssl&os=win64&lang=en-US" `
         -ClientName "Mozilla Firefox" `

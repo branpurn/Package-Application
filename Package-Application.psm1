@@ -1,4 +1,4 @@
-function Package-Application
+function Publish-Application
 {
     <#
         .SYNOPSIS
@@ -81,116 +81,57 @@ function Package-Application
         [String]$InstallPath,
         [String]$ExeName,
         [String]$ManualVersion,
-        [String]$DeployCollection,
+        [String[]]$DeployCollection,
         [String]$SiteCode,
         [String]$AppRepo,
-        [String]$DistribGroup,
+        [String[]]$DistribGroup,
         [String]$McmRoot
-    )
+    ) 
 
     Begin {
         Import-Module ConfigurationManager 
+        $CurrDate = Get-Date -Format g
         ## location of this script when invoked
         $CurrentPath = $Pwd.Path #= Split-Path ((Get-Variable MyInvocation -Scope Script).Value).MyCommand.Path
 
         ## Function definitions
-        function Get-MsiProductVersion 
-        {
-            <#
-                .SYNOPSIS
-                    Return the MSI product version from a Microsoft Installer file.
-
-                    Compiled from the work of "jstangroome" and "Mobe1969"
-                    https://gist.github.com/jstangroome/913062
-
-                    # LICENSE #
-                    This program is free software: you can redistribute it and/or modify it under the terms of the GNU Lesser General Public License as published by the Free Software Foundation, either version 3 of the License, or any later version. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-                    You should have received a copy of the GNU Lesser General Public License along with this program. If not, see <http://www.gnu.org/licenses/>.
-
-                .EXAMPLE
-                    # USAGE #
-                    $CurrentVersion = $Null
-                    Get-MsiProductVersion -Path $InstallerPath -Result ([ref]$CurrentVersion)
-                    Write-Output "Current Version: $CurrentVersion"
-                    
-                .NOTES
-                    THIS CODE IS MADE AVAILABLE AS IS, WITHOUT WARRANTY OF ANY KIND.
-                    THE ENTIRE RISK OF THE USE OR THE RESULTS FROM THE USE OF THIS
-                    CODE REMAINS WITH THE USER.
-            #>
-            [CmdletBinding()]
-            param (
-                [Parameter(Mandatory=$True)]
-                [string]$Path,
-                [ref]$Result
-            )
-            If (!(Test-Path $Path)) {Write-Output "0.0.0.0"} 
-            Else 
-            {
-                ## http://msdn.microsoft.com/en-us/library/aa369432(v=vs.85).aspx
-                $Job = Start-Job -ScriptBlock {
-                param($Path)
-                    function Get-Property ($Object, $PropertyName, [object[]]$ArgumentList) {
-                        return $Object.GetType().InvokeMember($PropertyName, 'Public, Instance, GetProperty', $Null, $Object, $ArgumentList)
-                    }
-                    function Invoke-Method ($Object, $MethodName, $ArgumentList) {
-                        return $Object.GetType().InvokeMember($MethodName, 'Public, Instance, InvokeMethod', $Null, $Object, $ArgumentList)
-                    }
-                    $ErrorActionPreference = 'Stop'
-                    Set-StrictMode -Version Latest
-                    $msiOpenDatabaseModeReadOnly = 0
-                    $Installer = New-Object -ComObject WindowsInstaller.Installer
-                    $Database = Invoke-Method $Installer OpenDatabase  @($Path, $msiOpenDatabaseModeReadOnly) -ErrorAction SilentlyContinue
-                    If ($Null -ne $Database) {
-                        $View = Invoke-Method $Database OpenView  @("SELECT Value FROM Property WHERE Property='ProductVersion'")
-                        Invoke-Method $View Execute
-                        $Record = Invoke-Method $View Fetch
-                        If ($Record) {
-                            Write-Output (Get-Property $Record StringData 1)
-                        }
-                        Invoke-Method $View Close @()
-                        [System.Runtime.Interopservices.Marshal]::ReleaseComObject($Database) | Out-Null
-                    }
-                    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($Installer) | Out-Null
-                    Remove-Variable -Name Record, View, Database, Installer
-                    [System.GC]::Collect()
-                } -ArgumentList @($Path)
-                $Job | Wait-Job
-                $Output = Receive-Job $Job -ErrorAction Stop
-                $Result.Value = $Output[1]
-                Remove-Job $Job
-                Write-Output $Result.Value
-            }
-        }
-
     }
 
     Process {
         Write-Host "Connecting to Configuration Manager Site"
-        If (New-PSDrive -Name "MCM" -PSProvider "CMSite" -Root $McmRoot -Description "MCM site") {Write-Host "Connected to MCM site..."} 
-        Else {Write-Host "Failed to connect to MCM site..."; Exit-Script}
-        Set-Location MCM:
+        If ($McmRoot){
+            If (New-PSDrive -Name "MCM" -PSProvider "CMSite" -Root $McmRoot -Description "MCM site") {Write-Host "Connected to MCM site..."} 
+            Else {Write-Host "Failed to connect to MCM site..."; Exit-Script}
+            Set-Location MCM:
+        }
+
         
-        #============================  SET-UP VARIABLES  ============================#
-        
-        ## Download the new Installer & Rename it to a generic name 
-        New-PSDrive -Name Template -PSProvider FileSystem -Root $CurrentPath
-        $NewInstallerPath = "Template:\Files\$InstallRename"
-        Write-Host "New installer path: $NewInstallerPath `nDownloading... $DownloadURL"
-        Start-BitsTransfer -Source $DownloadURL -Destination $NewInstallerPath
+        If  ($DownloadURL){
+            ## Download the new Installer & Rename it to a generic name 
+            New-PSDrive -Name Template -PSProvider FileSystem -Root $CurrentPath
+            $NewInstallerPath = "Template:\Files\$InstallRename"
+            Write-Host "New installer path: $NewInstallerPath `nDownloading... $DownloadURL"
+            Start-BitsTransfer -Source $DownloadURL -Destination $NewInstallerPath
+        }
+
 
         ## Detection method version
-        # If ($(Get-Item $NewInstallerPath).Extension -eq '.exe'){$Version = $(Get-Item $NewInstallerPath).VersionInfo.FileVersion}
-        # ElseIf ($(Get-Item $NewInstallerPath).Extension -eq '.msi'){
-        #     Set-Location Template:
-        #     $Version = Get-MsiProductVersion -Path ".\Files\$InstallRename"
-        #     Set-Location MCM:
-        # }
-        # ElseIf (($Null -eq $Version) -or !($Version.Revision -gt -1)) {$Version = $ManualVersion}
-        
         $Version = $ManualVersion
-
-        $CurrDate = Get-Date -Format g
+        If ($ManualVersion) {$Version = $ManualVersion}
+        Else{
+            # If ($(Get-Item $NewInstallerPath).Extension -eq '.exe'){$Version = $(Get-Item $NewInstallerPath).VersionInfo.FileVersion}
+            # ElseIf ($(Get-Item $NewInstallerPath).Extension -eq '.msi'){
+            #     Set-Location Template:
+            #     $Version = Get-MsiProductVersion -Path ".\Files\$InstallRename"
+            #     Set-Location MCM:
+            # }
+            # ElseIf (($Null -eq $Version) -or !($Version.Revision -gt -1)) {
+            #     If ($ManualVersion){$Version = $ManualVersion}
+            #     Else {"No version specified..."; Exit-Script}
+            # }
+        }
+        If (!$Version) {Write-Host "No version supplied"; Exit-Script}
+        
         $CMAppName = "$($ConfMgrName)_$($Version)"
 
         $ContentLoc = "$($AppRepo)\$($ConfMgrName)\$($ConfMgrName)_$($Version)"    ## New app folder will be "AppName_x.y.z"
@@ -200,13 +141,20 @@ function Package-Application
         ## Creates an empty application in MCM and moves it into the specified folder 
         Write-Host "Building Application... $CMAppName `nVersion... $Version"
 
+        ## TO-DO: Check if file downloaded is 64-bit
+
+        ## TO-DO: Check if path to move app to exists
+        ## TO-DO: If path does not exist, create it
+
         New-CMApplication `
             -Name $CMAppName `
             -SoftwareVersion $Version `
             -Owner $Owner `
             -ReleaseDate $CurrDate `
             -LocalizedName $ClientName `
-            -IconLocationFile $IconLoc ` | Move-CMObject -FolderPath ".\Application\$ConfMgrName" # "$($SiteCode):\Application\$ConfMgrName"
+            -IconLocationFile $IconLoc `
+            | Move-CMObject -FolderPath ".\Application\$ConfMgrName" `
+            | Set-CMApplication -DistributionPointSetting 'AutoDownload'
 
         ## Debug Log
         Write-Host ""
@@ -227,7 +175,8 @@ function Package-Application
             -FileName $ExeName `
             -PropertyType Version `
             -ExpectedValue $Version `
-            -ExpressionOperator IsEquals `
+            -ExpressionOperator GreaterEquals `
+            -Is64Bit:$True `
             -Path $InstallPath `
             -Value:$True 
             ## Ex, 7z.Exe exists, it is installed, and it is version 18.05
@@ -238,26 +187,39 @@ function Package-Application
 
         Add-CMScriptDeploymentType `
             -ApplicationName $CMAppName `
+            -ContentFallback:$True `
             -DeploymentTypeName $DeployTypeName `
             -ContentLocation $ContentLoc `
             -AddDetectionClause $DetectionMethod `
             -InstallCommand "Deploy-Application Install" `
             -UninstallCommand "Deploy-Application Uninstall" `
+            -RepairCommand "Deploy-Application Repair" `
             -InstallationBehaviorType InstallForSystem `
             -LogonRequirementType WhetherOrNotUserLoggedOn `
-            -EstimatedRuntimeMins $RuntimeEstimate | Out-Null #surpesses debug log
+            -RebootBehavior BasedOnExitCode `
+            -SlowNetworkDeploymentMode Download `
+            -EstimatedRuntimeMins $RuntimeEstimate | Out-Null ## Suppress verbosity
 
         ## Distribute content to distribution points and deploy
-        Write-Host "Distributing $CMAppName to $DistribGroup"
+        
 
         ## Distribute the content to the Distribution Point Group
-        Start-CMContentDistribution -ApplicationName $CMAppName -DistributionPointGroupName $DistribGroup
-
-        ## Debug Log
-        Write-Host "Deploying " $CMAppName " to " $DeployCollection
+        Write-Host "Distributing $CMAppName to..."
+        ForEach ($Group in $DistribGroup)
+        {
+            Write-Host "$Group ..."
+            Start-CMContentDistribution -ApplicationName $CMAppName -DistributionPointGroupName $Group
+        }
+        
 
         ## Deploy the new application
-        New-CMApplicationDeployment -CollectionName $DeployCollection -Name $CMAppName -DeployAction Install -DeployPurpose Available # | Out-Null #surpesses debug log
+        Write-Host "Deploying $CMAppName to..."
+        ForEach ($Collection in $DeployCollection)
+        {
+            Write-Host "$Collection ..."
+            New-CMApplicationDeployment -CollectionName $Collection -Name $CMAppName -DeployAction Install -DeployPurpose Available | Out-Null ## Suppress verbosity
+        }
+        
     }
 
     End {
